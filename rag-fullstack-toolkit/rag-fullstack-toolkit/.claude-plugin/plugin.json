@@ -1,0 +1,9 @@
+{
+  "name": "rag-fullstack-toolkit",
+  "version": "0.1.0",
+  "description": "Skills for building a RAG chatbot: web crawling, chunking/embedding, Neo4j GraphRAG retrieval, FastAPI streaming backend, and a React chat UI.",
+  "author": {
+    "name": "Harsh"
+  },
+  "keywords": ["rag", "neo4j", "fastapi", "react", "crawler", "chatbot", "graphrag"]
+}

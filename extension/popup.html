@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Crag</title>
+    <link rel="icon" href="icons/icon32.png" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="icons/icon32.png" width="20" height="20" alt="" />
+      <span class="brand">Crag</span>
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" data-tab="clip" role="tab" aria-selected="true">Clip</button>
+        <button class="tab-btn" data-tab="chat" role="tab" aria-selected="false">Chat</button>
+      </div>
+      <button id="settings-toggle" class="icon-btn" title="Backend settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <section id="settings-panel" class="settings-panel hidden">
+      <label for="backend-url">Backend URL</label>
+      <div class="row">
+        <input id="backend-url" type="text" placeholder="http://127.0.0.1:8000" />
+        <button id="settings-save" class="btn btn-secondary">Save</button>
+      </div>
+      <p id="settings-status" class="hint"></p>
+    </section>
+
+    <section id="panel-clip" class="panel">
+      <div class="page-info">
+        <p id="page-title" class="page-title">—</p>
+        <p id="page-url" class="page-url">—</p>
+      </div>
+      <div class="actions">
+        <button id="clip-page" class="btn">Add this page to Knowledge Base</button>
+        <button id="clip-selection" class="btn btn-secondary">Add selected text</button>
+      </div>
+      <p id="clip-status" class="status"></p>
+    </section>
+
+    <section id="panel-chat" class="panel hidden">
+      <div id="chat-log" class="chat-log">
+        <p class="hint">Ask a question about your knowledge base.</p>
+      </div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" placeholder="Ask a question…" autocomplete="off" />
+        <button type="submit" class="btn">Send</button>
+      </form>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

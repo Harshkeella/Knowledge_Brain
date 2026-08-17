@@ -1,0 +1,41 @@
+# --- Secrets / local config ---
+.env
+.env.*
+!.env.example
+!.env.local.example
+.claude/
+**/.claude/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# --- Runtime data (LightRAG stores + SQLite manifest) ---
+backend/storage/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.pem
+.idea/
+.vscode/

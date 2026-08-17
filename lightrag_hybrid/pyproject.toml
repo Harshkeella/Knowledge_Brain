@@ -1,0 +1,42 @@
+[project]
+name = "lightrag-hybrid"
+version = "0.1.0"
+description = "LightRAG/GraphRAG Hybrid System with Async Ingestion and Multi-Hop Retrieval"
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp>=3.9.0",
+    "aiofiles>=23.2.0",
+    "asyncio-throttle>=1.0.2",
+    "numpy>=1.26.0",
+    "sentence-transformers>=2.3.0",
+    "networkx>=3.2.0",
+    "chromadb>=0.4.22",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "tiktoken>=0.5.2",
+    "pypdf>=4.0.0",
+    "beautifulsoup4>=4.12.0",
+    "markdown>=3.5.0",
+    "groq>=0.4.0",
+    "httpx>=0.26.0",
+    "python-dotenv>=1.0.0",
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "tenacity>=8.2.0",
+    "xxhash>=3.4.0",
+    "rank-bm25>=0.2.2",
+    "scikit-learn>=1.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[project.scripts]
+lightrag = "lightrag_hybrid.cli:main"
