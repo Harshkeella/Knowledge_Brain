@@ -287,10 +287,6 @@ Crag/
 
 ---
 
-## Roadmap
+## License
 
-- ~~**Phase 2 — Chat**: Q&A over the knowledge base using LightRAG's hybrid query
-  modes.~~ ✅ Done — see `POST /api/v1/chat/stream` and the **Chat** dashboard page.
-- ~~**Phase 3 — Graph Explorer**: interactive 2D/3D visualization of the extracted
-  entity/relationship graph.~~ ✅ Done — see `GET /api/v1/graph` and the **Graph**
-  dashboard page (force-directed 2D/3D view, search, legend, node detail panel).
+[MIT](LICENSE)
