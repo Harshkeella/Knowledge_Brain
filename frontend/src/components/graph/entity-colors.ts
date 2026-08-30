@@ -1,4 +1,5 @@
 import type { GraphNode } from "@/lib/api";
+import { fixedColorFor } from "@/constants/symbols";
 
 // Validated categorical palette (dataviz skill, references/palette.md).
 // Fixed hue order — do not reorder or cycle. Slots are assigned to entity
@@ -41,8 +42,9 @@ export interface EntityColorScale {
 }
 
 export function buildEntityColorScale(nodes: GraphNode[]): EntityColorScale {
-  const slots = isDarkMode() ? DARK_SLOTS : LIGHT_SLOTS;
-  const other = isDarkMode() ? DARK_OTHER : LIGHT_OTHER;
+  const dark = isDarkMode();
+  const slots = dark ? DARK_SLOTS : LIGHT_SLOTS;
+  const other = dark ? DARK_OTHER : LIGHT_OTHER;
 
   const counts = new Map<string, number>();
   for (const node of nodes) {
@@ -54,7 +56,17 @@ export function buildEntityColorScale(nodes: GraphNode[]): EntityColorScale {
 
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const assignment = new Map<string, string>();
-  ranked.slice(0, slots.length).forEach(([type], i) => {
+
+  // The structural labels (source, folder, file, class, ...) own a fixed
+  // colour and are held OUT of the slot assignment entirely. That is what
+  // keeps existing graphs looking identical: document entity types rank among
+  // themselves exactly as they did before any Source node existed, instead of
+  // being pushed down a slot by a supernode that outranks them.
+  const fixed = ranked.filter(([type]) => fixedColorFor(type, dark) !== null);
+  const scaled = ranked.filter(([type]) => fixedColorFor(type, dark) === null);
+
+  for (const [type] of fixed) assignment.set(type, fixedColorFor(type, dark)!);
+  scaled.slice(0, slots.length).forEach(([type], i) => {
     assignment.set(type, slots[i]);
   });
 
@@ -65,11 +77,12 @@ export function buildEntityColorScale(nodes: GraphNode[]): EntityColorScale {
       return assignment.get(raw) ?? other;
     },
     legend: [
-      ...ranked.slice(0, slots.length).map(([type]) => ({
+      ...fixed.map(([type]) => ({ type, color: assignment.get(type)! })),
+      ...scaled.slice(0, slots.length).map(([type]) => ({
         type,
         color: assignment.get(type)!,
       })),
-      ...(ranked.length > slots.length ? [{ type: "Other", color: other }] : []),
+      ...(scaled.length > slots.length ? [{ type: "Other", color: other }] : []),
     ],
     otherColor: other,
   };

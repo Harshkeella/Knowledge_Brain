@@ -1,0 +1,18 @@
+# Optional extras for folder ingestion + code intelligence.
+#
+#   pip install -r requirements-codeintel.txt
+#
+# The base install works without any of this and degrades in a defined way:
+#   - Python code is parsed with the standard library's `ast`, so Python
+#     classes/functions/methods/calls work with nothing installed at all.
+#   - Without tree-sitter grammars, non-Python files are still ingested as
+#     CodeFile leaves; they just carry no symbols.
+#   - Without Pillow, Image nodes carry format and size but no dimensions.
+# Nothing here raises on absence -- see code_intel._parser_for and
+# folder_ingest._image_size.
+
+# JS/TS (and 100+ other) grammars for the tree-sitter extraction path.
+tree-sitter-language-pack>=0.7
+
+# Image dimensions on Image nodes.
+pillow>=11.0

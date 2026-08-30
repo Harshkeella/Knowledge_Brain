@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Dropzone } from "@/components/knowledge/dropzone";
+import { FolderInput } from "@/components/knowledge/folder-input";
 import { InventoryTable } from "@/components/knowledge/inventory-table";
 import { PasteSandbox } from "@/components/knowledge/paste-sandbox";
 import { UploadStatusList } from "@/components/knowledge/upload-status-list";
@@ -44,13 +45,14 @@ export default function KnowledgePage() {
       <div>
         <h1 className="text-2xl font-semibold">Knowledge Base</h1>
         <p className="text-muted-foreground">
-          Upload documents, add URLs, or paste text to build your hybrid
-          vector + graph knowledge base.
+          Upload documents, scan a folder, add URLs, or paste text to build your
+          hybrid vector + graph knowledge base.
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Dropzone onIngested={refresh} />
+        <FolderInput onIngested={refresh} />
         <UrlInput onIngested={refresh} />
         <PasteSandbox onIngested={refresh} />
       </div>

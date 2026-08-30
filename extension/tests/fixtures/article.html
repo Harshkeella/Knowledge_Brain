@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>The Quiet Case for Boring Infrastructure — Example Journal</title>
+  <meta name="author" content="Jordan Ellery">
+  <meta property="og:site_name" content="Example Journal">
+  <meta property="article:published_time" content="2025-03-11T09:00:00Z">
+  <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"Article","headline":"The Quiet Case for Boring Infrastructure","author":{"@type":"Person","name":"Jordan Ellery"},"datePublished":"2025-03-11"}
+  </script>
+</head>
+<body>
+  <nav class="site-nav"><a href="/">Home</a> <a href="/archive">Archive</a> <a href="/about">About</a></nav>
+  <aside class="sidebar"><h4>Popular</h4><ul><li><a href="/a">Another post</a></li><li><a href="/b">And another</a></li></ul></aside>
+  <article>
+    <h1>The Quiet Case for Boring Infrastructure</h1>
+    <p class="byline">By Jordan Ellery · March 11, 2025</p>
+    <p>Every team eventually reaches the moment where the interesting technical decision and the correct technical decision point in opposite directions. The interesting choice promises leverage: a new runtime, a new datastore, a scheduler that finally matches the shape of the problem. The correct choice is usually the one already running in production, slightly extended.</p>
+    <p>Boring infrastructure earns its name by being unremarkable in the specific ways that matter at three in the morning. Its failure modes are documented, its operational envelope is known, and the person paged has seen this exact error string before. None of that shows up in an architecture review, which is precisely why it gets traded away so cheaply.</p>
+    <h2>Novelty has a carrying cost</h2>
+    <p>The cost of a new dependency is not the afternoon spent integrating it. It is the years spent carrying it: upgrades, CVEs, the one engineer who understands its failure semantics leaving, the slow discovery that its defaults were tuned for a workload unlike yours.</p>
+    <ul>
+      <li>Every dependency is a promise to keep reading someone else's changelog.</li>
+      <li>Every abstraction is a layer someone must peel back under pressure.</li>
+      <li>Every clever optimisation is a comment that will one day be wrong.</li>
+    </ul>
+    <h2>When to spend the novelty budget</h2>
+    <p>None of this argues for stagnation. It argues for spending the novelty budget deliberately, on the one or two places where the new thing is genuinely load-bearing for the product, and letting everything else be aggressively unremarkable.</p>
+    <blockquote><p>Choose boring technology, then spend the saved attention on the problem your users actually have.</p></blockquote>
+    <p>The teams that ship steadily over years are rarely the ones with the most interesting stack diagrams. They are the ones who kept enough attention in reserve to notice what their users were doing.</p>
+  </article>
+  <footer class="site-footer"><p>© 2025 Example Journal. All rights reserved.</p></footer>
+</body>
+</html>

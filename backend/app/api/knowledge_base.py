@@ -1,11 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.auth import get_current_user
 from app.models.schemas import DeleteResult, DocumentOut
 from app.services import manifest
 from app.services.ingestion import delete_document
+from app.services.spreadsheet_query import drop_computed_column
 from app.services.lightrag_engine import get_rag
 
-router = APIRouter(prefix="/api/v1/knowledge-base", tags=["knowledge-base"])
+# Authenticated, at the router: a route added here cannot forget it, and the
+# dependency binds the identity that every store below scopes itself on.
+router = APIRouter(
+    prefix="/api/v1/knowledge-base",
+    tags=["knowledge-base"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("", response_model=list[DocumentOut])
@@ -22,6 +30,18 @@ async def reprocess_pending():
     rag = await get_rag()
     await rag.apipeline_process_enqueue_documents()
     return {"status": "ok"}
+
+
+@router.delete("/spreadsheet/{table}/columns/{column}")
+async def undo_computed_column(table: str, column: str):
+    """Undo for a column added through chat. Original spreadsheet columns are
+    not removable here -- only ones this feature computed."""
+    if not drop_computed_column(table, column):
+        raise HTTPException(
+            status_code=404,
+            detail=f"No computed column {column!r} on {table!r} to undo.",
+        )
+    return {"table": table, "column": column, "dropped": True}
 
 
 @router.delete("/{doc_id}", response_model=DeleteResult)

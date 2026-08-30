@@ -33,6 +33,9 @@ backend/storage/
 npm-debug.log*
 yarn-error.log*
 
+# --- Tooling caches, not source ---
+.serena/
+
 # --- OS / editor ---
 .DS_Store
 Thumbs.db

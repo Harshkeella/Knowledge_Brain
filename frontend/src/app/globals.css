@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -163,4 +163,187 @@
   to {
     transform: translateX(400%);
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Landing page (app/page.tsx)
+
+   Every animation below lives inside `prefers-reduced-motion: no-preference`.
+   That way the un-animated state IS the finished state: with motion reduced no
+   rule applies at all, and the hero text and every figure render fully drawn.
+   --------------------------------------------------------------------------- */
+
+/* Hero backdrop for anyone not getting the Spline scene: no WebGL, reduced
+   motion, or a viewport below md. Echoes the inverted nebula's ink-on-paper
+   palette so the fallback reads as the same design, not a blank panel. */
+.hero-static {
+  background:
+    radial-gradient(55% 45% at 62% 45%, #d9cfe8 0%, transparent 70%),
+    radial-gradient(40% 40% at 78% 62%, #cfd6ec 0%, transparent 70%),
+    #ffffff;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-title > span,
+  .landing-reveal {
+    opacity: 0;
+    animation: landing-rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) var(--delay, 0s)
+      forwards;
+  }
+
+  .landing-arrow {
+    animation: landing-bob 1.8s ease-in-out infinite;
+  }
+
+  /* Figures start hidden and settle once useReveal sets data-visible. */
+  .beat-figure [data-part] {
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      opacity 0.5s ease-out,
+      transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition-delay: calc(var(--i, 0) * 80ms);
+  }
+  .beat-figure [data-part="chunk"] {
+    transform: translateX(-46px) scale(0.9);
+  }
+  .beat-figure [data-part="node"] {
+    transform: scale(0.2);
+  }
+  .beat-figure [data-part="scatter"] {
+    transform: translateX(-40px);
+  }
+  .beat-figure [data-part="graph"] {
+    transform: translateX(40px);
+  }
+  .beat-figure [data-part="answer"] {
+    transform: translateY(10px);
+    transition-delay: 450ms;
+  }
+
+  /* Edges draw themselves in rather than fading. */
+  .beat-figure [data-part="edge"] {
+    stroke-dasharray: 220;
+    stroke-dashoffset: 220;
+    transition:
+      opacity 0.3s ease-out,
+      stroke-dashoffset 0.9s ease-out;
+  }
+
+  .beat-figure[data-visible="true"] [data-part] {
+    opacity: 1;
+    transform: none;
+  }
+  .beat-figure[data-visible="true"] [data-part="edge"] {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.45em);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes landing-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(4px);
+  }
+}
+
+/* highlight.js tokens, written against the app's own palette rather than
+   importing one of its themes — a shipped theme hardcodes its colours, so it
+   would need a second stylesheet and a swap to follow dark mode. These follow
+   the theme for free. */
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag {
+  color: oklch(0.52 0.19 295);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: oklch(0.52 0.14 155);
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable {
+  color: oklch(0.56 0.16 45);
+}
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: oklch(0.52 0.17 250);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-meta {
+  color: oklch(0.54 0.13 200);
+}
+.hljs-deletion {
+  color: oklch(0.55 0.2 25);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-literal,
+.dark .hljs-doctag {
+  color: oklch(0.78 0.15 295);
+}
+.dark .hljs-string,
+.dark .hljs-regexp,
+.dark .hljs-addition {
+  color: oklch(0.79 0.15 150);
+}
+.dark .hljs-number,
+.dark .hljs-symbol,
+.dark .hljs-attr,
+.dark .hljs-variable,
+.dark .hljs-template-variable {
+  color: oklch(0.8 0.13 55);
+}
+.dark .hljs-title,
+.dark .hljs-section,
+.dark .hljs-name,
+.dark .hljs-selector-id,
+.dark .hljs-selector-class {
+  color: oklch(0.79 0.13 250);
+}
+.dark .hljs-type,
+.dark .hljs-built_in,
+.dark .hljs-builtin-name,
+.dark .hljs-meta {
+  color: oklch(0.8 0.11 200);
+}
+.dark .hljs-deletion {
+  color: oklch(0.75 0.16 25);
 }

@@ -24,6 +24,8 @@ import threading
 from typing import Callable
 
 from app.core.config import get_settings
+from app.services import graph_schema
+from app.services.parsers.spreadsheet import SUMMARY_HEADER
 
 logger = logging.getLogger("app.gliner_extract")
 
@@ -51,6 +53,44 @@ _MAX_SUMMARY_CHARS = 1200
 # with the source text -- entity offsets are mapped back through these.
 _SENTENCE_RE = re.compile(r"[^.!?\n]*[.!?\n]+|[^.!?\n]+$")
 
+# A reference section is URL soup, and GLiNER scores the slug in
+# ".../story/4805137/cristiano-ronaldo-becomes-first-man-to-score-in-5-world-cups"
+# as a `person`. One Wikipedia article put 158 such nodes in the graph -- and
+# because each carries the real surname as a token, they also make "RONALDO"
+# genuinely ambiguous, which is what blocks alias resolution from ever firing.
+# So this is upstream of the duplicate-node bug, not a separate cleanup.
+#
+# Masked with spaces rather than deleted: every entity offset below is an index
+# into this string, so the replacement has to be the same length as the match.
+# A chunk boundary can cut a URL in half, so the tail arrives as a bare
+# "au/football/.../cristiano-ronaldo-conundrum-...". Matching those needs the
+# TLD spelled out: a generic `\w+/\S+` would eat "src/app/page.tsx" and every
+# other real path in a code or docs ingest.
+_TLD = (
+    "com|org|net|edu|gov|mil|int|io|ai|co|me|tv|info|biz"
+    "|uk|de|fr|es|it|pt|nl|be|ch|at|se|no|dk|fi|pl|ru|ua|gr|cz|ro|hu|ie"
+    "|ca|au|nz|jp|cn|kr|in|br|mx|ar|cl|za|sa|ae|tr|il|sg|hk|tw|id|my|th|ph"
+)
+_URL_RE = re.compile(
+    rf"""https?://\S+
+      | www\.\S+
+      | \b[\w.-]*\w\.(?:{_TLD})\b/\S*
+      | \b(?:{_TLD})/\S+""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _mask_urls(text: str) -> str:
+    """Blank out URLs, preserving length so entity offsets stay valid."""
+    return _URL_RE.sub(lambda m: " " * len(m.group()), text)
+
+
+def _clean(sentence: str) -> str:
+    """Evidence text for a node/edge description. Masking leaves long runs of
+    spaces where a citation was; collapse them so the description reads."""
+    return re.sub(r"\s+", " ", sentence).strip()
+
+
 # GLiNER's encoder truncates past ~384 tokens, so a 1024-token chunk has to be
 # windowed. Bigger windows are faster (fewer forward passes) but hit that
 # ceiling; ~900 chars (~150 words) sits comfortably under it.
@@ -62,7 +102,6 @@ _MAX_ENTITIES_PER_CHUNK = 40
 _MAX_RELATIONS_PER_CHUNK = 60
 _MAX_ENTITIES_PER_SENTENCE = 5
 _MAX_DESCRIPTION_CHARS = 400
-_MAX_KEYWORD_WORDS = 6
 
 
 def _split_sentences(text: str) -> list[tuple[int, int]]:
@@ -89,17 +128,6 @@ def _windows(text: str, spans: list[tuple[int, int]]) -> list[tuple[int, str]]:
     return out
 
 
-def _clean_name(name: str) -> str:
-    return re.sub(r"\s+", " ", name).strip(" \t\n\r.,;:!?'\"()[]{}<>|/\\")
-
-
-def _between(text: str, left: tuple[int, int], right: tuple[int, int]) -> str:
-    """Words separating two mentions -- the closest thing to a relation label
-    available without a second model."""
-    words = text[left[1] : right[0]].split()
-    return " ".join(words[:_MAX_KEYWORD_WORDS]) or "related to"
-
-
 def extract_records(text: str, predict: Callable[[list[str]], list[list[dict]]]) -> dict:
     """Entities + relationships for one chunk, in LightRAG's JSON schema.
 
@@ -107,6 +135,7 @@ def extract_records(text: str, predict: Callable[[list[str]], list[list[dict]]])
     (start/end/text/label/score) -- injected so the logic is testable without
     loading a model.
     """
+    text = _mask_urls(text)
     spans = _split_sentences(text)
     windows = _windows(text, spans)
     if not windows:
@@ -114,30 +143,29 @@ def extract_records(text: str, predict: Callable[[list[str]], list[list[dict]]])
 
     sentence_starts = [s for s, _ in spans]
 
-    # name (casefolded) -> record. Casefolding merges "Microsoft"/"microsoft"
-    # within a chunk; the first-seen surface form wins.
-    # ponytail: no cross-chunk casing normalization -- proper nouns are cased
-    # consistently in real prose. Add a canonical-name pass if the graph shows
-    # case-split duplicates.
+    # canonical name -> record. The name IS the node identity: LightRAG merges
+    # entities by exact string, so folding case/articles/possessives here is
+    # what stops "Microsoft", "microsoft" and "the Microsoft's" from becoming
+    # three nodes for one company -- in this chunk and in every other one,
+    # since the fold is deterministic rather than first-seen.
     entities: dict[str, dict] = {}
-    # sentence index -> [(name, (start, end))] in order of appearance
-    by_sentence: dict[int, list[tuple[str, tuple[int, int]]]] = {}
+    # sentence index -> [name] in order of appearance
+    by_sentence: dict[int, list[str]] = {}
 
     for (offset, window), found in zip(windows, predict([w for _, w in windows])):
         for ent in found:
-            name = _clean_name(ent["text"])
+            name = graph_schema.canonical_name(ent["text"])
             if not name:
                 continue
-            start, end = offset + ent["start"], offset + ent["end"]
-            si = bisect.bisect_right(sentence_starts, start) - 1
-            sentence = text[spans[si][0] : spans[si][1]].strip() if si >= 0 else ""
+            si = bisect.bisect_right(sentence_starts, offset + ent["start"]) - 1
+            sentence = _clean(text[spans[si][0] : spans[si][1]]) if si >= 0 else ""
 
-            key = name.casefold()
-            if key not in entities:
-                entities[key] = {
+            if name not in entities:
+                entities[name] = {
                     "name": name,
-                    # LightRAG lowercases and strips spaces from types anyway.
-                    "type": ent["label"],
+                    # Canonical label casing, so the property graph's legend
+                    # never splits one type into `person` and `Person`.
+                    "type": graph_schema.canonical_label(ent["label"]),
                     # GLiNER returns no description, and LightRAG drops any
                     # entity without one. The sentence it was found in is both
                     # non-empty and genuinely grounded context for retrieval.
@@ -146,29 +174,40 @@ def extract_records(text: str, predict: Callable[[list[str]], list[list[dict]]])
                 }
             if si >= 0:
                 mentions = by_sentence.setdefault(si, [])
-                if entities[key]["name"] not in [m[0] for m in mentions]:
-                    mentions.append((entities[key]["name"], (start, end)))
+                if name not in mentions:
+                    mentions.append(name)
 
     kept = sorted(entities.values(), key=lambda e: -e["_score"])[:_MAX_ENTITIES_PER_CHUNK]
     kept_names = {e["name"] for e in kept}
 
-    # ponytail: relationships are same-sentence co-occurrence, not a typed
-    # relation model -- an entity pair in one sentence is related, and the
-    # words between them stand in for the relation type. Swap in GLiREL (or a
-    # Tier-2 LLM pass) if untyped edges prove too noisy for retrieval.
+    # Relationships are same-sentence co-occurrence, and their type is the
+    # closed vocabulary's RELATED_TO -- not the words between the two mentions.
+    # Those words were unbounded free text, so a pair seen in ten sentences
+    # produced ten edges with ten different "types" that LightRAG then merged
+    # into one comma-salad keyword; the sentence is already the edge's
+    # description, so nothing is lost by typing the edge properly. One edge per
+    # unordered pair per chunk, keeping the first sentence as its evidence.
+    #
+    # ponytail: no relation model, so every prose edge is RELATED_TO. Swap in
+    # GLiREL (or a Tier-2 LLM pass) if the graph needs real verb types.
     relationships: list[dict] = []
+    seen_pairs: set[tuple[str, str]] = set()
     for si, mentions in sorted(by_sentence.items()):
-        sentence = text[spans[si][0] : spans[si][1]].strip()
-        mentions = [m for m in mentions if m[0] in kept_names][:_MAX_ENTITIES_PER_SENTENCE]
-        for i, (a_name, a_span) in enumerate(mentions):
-            for b_name, b_span in mentions[i + 1 :]:
-                if a_name == b_name:
+        if len(relationships) >= _MAX_RELATIONS_PER_CHUNK:
+            break
+        sentence = _clean(text[spans[si][0] : spans[si][1]])
+        mentions = [m for m in mentions if m in kept_names][:_MAX_ENTITIES_PER_SENTENCE]
+        for i, a_name in enumerate(mentions):
+            for b_name in mentions[i + 1 :]:
+                pair = (a_name, b_name) if a_name < b_name else (b_name, a_name)
+                if pair[0] == pair[1] or pair in seen_pairs:
                     continue
+                seen_pairs.add(pair)
                 relationships.append(
                     {
                         "source": a_name,
                         "target": b_name,
-                        "keywords": _between(text, a_span, b_span),
+                        "keywords": graph_schema.RELATED_TO,
                         "description": sentence[:_MAX_DESCRIPTION_CHARS],
                     }
                 )
@@ -176,8 +215,6 @@ def extract_records(text: str, predict: Callable[[list[str]], list[list[dict]]])
                     break
             if len(relationships) >= _MAX_RELATIONS_PER_CHUNK:
                 break
-        if len(relationships) >= _MAX_RELATIONS_PER_CHUNK:
-            break
 
     for e in kept:
         e.pop("_score", None)
@@ -257,6 +294,14 @@ async def gliner_extract(
         return EMPTY_RESULT
 
     text = match.group(1)
+    # A spreadsheet's structure is written into the graph node by node by
+    # tabular_graph, from what the parser actually read. Running the extractor
+    # over the summary as well only produced a second, worse copy of it --
+    # `VARCHAR`, `BIGINT` and `categorical` as entities, wired to the column
+    # names. The deterministic version is the one that is right.
+    if text.lstrip().startswith(SUMMARY_HEADER):
+        return EMPTY_RESULT
+
     records = await asyncio.to_thread(extract_records, text, _predict)
     return json.dumps(records, ensure_ascii=False)
 

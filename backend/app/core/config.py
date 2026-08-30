@@ -64,6 +64,18 @@ class Settings:
 
     storage_dir: str = os.getenv("STORAGE_DIR", "./storage")
 
+    # Vector store. Blank QDRANT_URL runs Qdrant embedded out of storage_dir --
+    # no server, no Docker, same collections and same query API. Point it at a
+    # real instance and nothing else in the app changes.
+    qdrant_url: str | None = os.getenv("QDRANT_URL") or None
+    qdrant_api_key: str | None = os.getenv("QDRANT_API_KEY") or None
+
+    # How deep each half of the hybrid search looks before RRF fuses them, as a
+    # multiple of top_k. Fusion can only rank what the branches returned, so a
+    # term that is a weak semantic match needs room to show up on the sparse
+    # side; 4x is enough for that without paying for a full scan.
+    hybrid_prefetch_multiplier: int = int(os.getenv("HYBRID_PREFETCH_MULTIPLIER", "4"))
+
     # Article scraping. Blank key = trafilatura-only (zero-code rollback).
     # js_render/premium_proxy cost extra credits, so they're off for the first
     # attempt and only used on the automatic retry.
@@ -139,6 +151,96 @@ class Settings:
         for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
         if o.strip()
     ]
+
+    # --- Identity and tenancy -------------------------------------------
+    # Off by default so a local single-user install runs exactly as before:
+    # every request is LOCAL_USER_ID, whose workspace is "" and whose storage
+    # paths are the pre-multi-tenant ones. Turn it on for any deployment
+    # reachable by more than one person.
+    auth_disabled: bool = os.getenv("AUTH_DISABLED", "true").lower() == "true"
+    local_user_id: str = os.getenv("LOCAL_USER_ID", "local")
+
+    # Supabase project JWT secret (Project Settings -> API -> JWT Secret).
+    # Only the secret is needed: tokens are verified locally, so the API never
+    # calls Supabase and works if Supabase is down.
+    supabase_jwt_secret: str | None = os.getenv("SUPABASE_JWT_SECRET") or None
+
+    # Per-user storage ceiling, counted from the bytes actually ingested.
+    storage_quota_bytes: int = int(
+        os.getenv("STORAGE_QUOTA_BYTES", str(5 * 1024**3))
+    )
+
+    # Upload limits, enforced server-side before anything is parsed.
+    max_file_size_bytes: int = int(
+        os.getenv("MAX_FILE_SIZE_BYTES", str(200 * 1024**2))
+    )
+    max_batch_size_bytes: int = int(
+        os.getenv("MAX_BATCH_SIZE_BYTES", str(500 * 1024**2))
+    )
+    max_files_per_batch: int = int(os.getenv("MAX_FILES_PER_BATCH", "50"))
+
+    # --- LLM limits -------------------------------------------------------
+    # Per user, on top of the GLOBAL provider pacing GROQ_TPM_LIMIT already
+    # does. Without these, one user ingesting a book spends the whole free
+    # tier's daily tokens and everyone else's chat falls back to Ollama.
+    llm_user_requests_per_minute: int = int(
+        os.getenv("LLM_LIMIT_USER_RPM", "20")
+    )
+    llm_user_max_concurrent: int = int(os.getenv("LLM_LIMIT_USER_CONCURRENT", "2"))
+    # 0 disables the daily ceiling. The default is roughly a heavy day of chat
+    # on a free tier, not a hard cost control -- set it against your own plan.
+    llm_user_tokens_per_day: int = int(
+        os.getenv("LLM_LIMIT_USER_TOKENS_PER_DAY", "200000")
+    )
+
+    # Used only to attribute spend per user. Zero on a free tier, which is
+    # correct: the ledger still answers "who used the most tokens".
+    llm_cost_per_input_token: float = float(
+        os.getenv("LLM_COST_PER_INPUT_TOKEN", "0")
+    )
+    llm_cost_per_output_token: float = float(
+        os.getenv("LLM_COST_PER_OUTPUT_TOKEN", "0")
+    )
+
+    # How many users' LightRAG instances stay resident. Each holds a NetworkX
+    # graph and the KV stores in memory, so this is the memory knob: the
+    # least-recently-used instance is finalized when a new user arrives.
+    max_active_workspaces: int = int(os.getenv("MAX_ACTIVE_WORKSPACES", "8"))
+
+    # Spreadsheets live in DuckDB, not in the graph: exact values, real types,
+    # and the arithmetic done by a database instead of by an LLM.
+    spreadsheet_max_rows: int = int(os.getenv("SPREADSHEET_MAX_ROWS", "500"))
+
+    # A workbook's structure goes into the graph; its cells do not. The one
+    # exception is a categorical column whose values a document already named,
+    # which is what links a spreadsheet to a contract -- capped here so a
+    # high-cardinality column can't drag ten thousand nodes in with it.
+    spreadsheet_max_graph_values: int = int(
+        os.getenv("SPREADSHEET_MAX_GRAPH_VALUES", "50")
+    )
+
+    # Folder ingestion takes a path on the SERVER's disk. Unset, any readable
+    # directory is fair game -- fine for the local single-user default, wrong
+    # the moment this is bound to anything but localhost. Set it and folder
+    # ingestion is confined to that subtree.
+    folder_ingest_root: str | None = os.getenv("FOLDER_INGEST_ROOT") or None
+
+    # Files above this never have their bytes read: a leaf node is still
+    # created with name/size/type, only the content is skipped.
+    folder_max_file_mb: float = float(os.getenv("FOLDER_MAX_FILE_MB", "25"))
+
+    # No ceiling by default: a folder ingest is meant to mirror the whole tree,
+    # and a small default here is exactly the bug that looks like "the walk
+    # stopped early". Set it only to deliberately clip a pathological tree.
+    folder_max_depth: int = int(os.getenv("FOLDER_MAX_DEPTH", "1000"))
+
+    @property
+    def qdrant_path(self) -> str:
+        return os.path.join(self.storage_dir, "qdrant")
+
+    @property
+    def duckdb_path(self) -> str:
+        return os.path.join(self.storage_dir, "spreadsheets.duckdb")
 
     @property
     def kb_working_dir(self) -> str:

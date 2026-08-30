@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ingestFiles } from "@/lib/api";
 import { useKnowledgeStore } from "@/store/knowledge-store";
 
-const ACCEPTED_EXTENSIONS = [".pdf", ".md", ".markdown", ".txt"];
+const ACCEPTED_EXTENSIONS = [".pdf", ".md", ".markdown", ".txt", ".xlsx", ".xlsm", ".csv"];
 
 export function Dropzone({ onIngested }: { onIngested: () => void }) {
   const [isDragging, setIsDragging] = useState(false);

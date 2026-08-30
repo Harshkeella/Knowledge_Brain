@@ -1,9 +1,16 @@
-"""Owns the single LightRAG instance: local storage, local embeddings, Groq/Ollama LLM."""
+"""Owns the LightRAG instances: local storage, local embeddings, Groq/Ollama LLM.
+
+One instance per workspace (= per user), cached and capped -- see `get_rag`.
+The LLM funcs below are process-wide on purpose: they are stateless callers of
+Groq/OpenRouter/Ollama, and the extraction token bucket is a *global* provider
+budget that must be shared across users, not handed out per user.
+"""
 
 import asyncio
 import logging
 import re
 import time
+from collections import OrderedDict
 from typing import AsyncIterator
 
 import httpx
@@ -16,6 +23,9 @@ from lightrag.utils import EmbeddingFunc
 from sentence_transformers import SentenceTransformer
 
 from app.core.config import get_settings
+from app.services import qdrant_store
+from app.services.parsers import spreadsheet
+from app.services.llm_limits import LlmQuotaExceeded, record, user_budget
 from app.services.rate_limiter import TokenBucket, estimate_tokens
 
 logger = logging.getLogger("app.lightrag_engine")
@@ -180,6 +190,24 @@ async def _openrouter_complete(
     )
 
 
+async def _record_usage(operation, model, prompt, system_prompt, result) -> None:
+    """Append the call to the user's ledger.
+
+    ponytail: token counts are the same ~4-chars estimate the rate limiter
+    uses, and a streaming response is charged for its input only -- counting
+    its output would mean wrapping the iterator and delaying every chunk.
+    Swap in the provider's own `usage` block if billing ever depends on it.
+    """
+    output = len(result) // 4 if isinstance(result, str) else 0
+    await record(
+        provider="groq" if _settings.groq_api_key else "ollama",
+        model=model,
+        operation=operation,
+        input_tokens=(len(prompt) + len(system_prompt or "")) // 4,
+        output_tokens=output,
+    )
+
+
 @opik.track(name="lightrag_extract_llm", type="llm")
 async def llm_model_func(
     prompt,
@@ -194,6 +222,17 @@ async def llm_model_func(
     """
     history_messages = history_messages or []
 
+    async with user_budget(estimate_tokens(prompt, system_prompt)):
+        result = await _complete_extract(
+            prompt, system_prompt, history_messages, keyword_extraction, **kwargs
+        )
+    await _record_usage("extract", _settings.groq_extract_model, prompt, system_prompt, result)
+    return result
+
+
+async def _complete_extract(
+    prompt, system_prompt, history_messages, keyword_extraction, **kwargs
+) -> str | AsyncIterator[str]:
     if _settings.groq_api_key and not _groq_model_on_cooldown(
         _settings.groq_extract_model
     ):
@@ -242,6 +281,17 @@ async def query_llm_func(
     """
     history_messages = history_messages or []
 
+    async with user_budget(estimate_tokens(prompt, system_prompt)):
+        result = await _complete_query(
+            prompt, system_prompt, history_messages, keyword_extraction, **kwargs
+        )
+    await _record_usage("query", _settings.groq_model, prompt, system_prompt, result)
+    return result
+
+
+async def _complete_query(
+    prompt, system_prompt, history_messages, keyword_extraction, **kwargs
+) -> str | AsyncIterator[str]:
     if _settings.groq_api_key and not _groq_model_on_cooldown(_settings.groq_model):
         try:
             return await _groq_complete_with_rate_limit_retry(
@@ -333,14 +383,58 @@ def _warn_if_context_budget_exceeds_tpm() -> None:
         )
 
 
-_rag: LightRAG | None = None
+# One LightRAG per workspace. LightRAG namespaces every storage it owns by
+# workspace -- the graphml file, the KV stores, the doc_status rows, and the
+# `workspace_id` payload each Qdrant point is tagged with and every vector
+# query filters on server-side -- so `workspace = user id` is the whole
+# multi-tenancy story for the retrieval core. Nothing below this line filters
+# by user, because nothing below this line can see another user's data.
+#
+# Insertion-ordered, capped by MAX_ACTIVE_WORKSPACES: each instance holds a
+# NetworkX graph and the KV stores in memory, so an unbounded dict is the
+# memory leak this cap exists to prevent.
+_rags: "OrderedDict[str, LightRAG]" = OrderedDict()
+_rag_lock = asyncio.Lock()
+
+# Boot-time checks that are about the process, not about a workspace.
+_engine_checked = False
+
+
+async def _evict_idle_rags() -> None:
+    while len(_rags) > _settings.max_active_workspaces:
+        workspace, rag = _rags.popitem(last=False)
+        logger.info("Evicting idle LightRAG workspace %r", workspace or "(local)")
+        try:
+            await rag.finalize_storages()
+        except Exception:
+            logger.warning(
+                "Finalizing workspace %r failed", workspace, exc_info=True
+            )
 
 
 async def get_rag() -> LightRAG:
-    global _rag
-    if _rag is None:
-        await check_ollama_fallback()
-        _warn_if_context_budget_exceeds_tpm()
+    """The current user's LightRAG instance, created on first use.
+
+    Takes no argument on purpose: the identity comes from the request-scoped
+    ContextVar in app.core.auth, so the forty call sites that already say
+    `await get_rag()` become user-scoped without one of them changing, and a
+    new call site cannot forget to pass a user id.
+    """
+    from app.core import auth
+
+    workspace = auth.workspace()
+
+    async with _rag_lock:
+        rag = _rags.get(workspace)
+        if rag is not None:
+            _rags.move_to_end(workspace)
+            return rag
+
+        global _engine_checked
+        if not _engine_checked:
+            await check_ollama_fallback()
+            _warn_if_context_budget_exceeds_tpm()
+            _engine_checked = True
         # binding/model are what LightRAG's boot-time "Role LLM Configuration"
         # log prints; without them every role reports None/None and the log
         # can't answer "which model is actually serving chat?".
@@ -383,8 +477,14 @@ async def get_rag() -> LightRAG:
         if _settings.rerank_enabled:
             from app.services.reranker import rerank as rerank_model_func
 
-        _rag = LightRAG(
+        rag = LightRAG(
             working_dir=_settings.kb_working_dir,
+            workspace=workspace,
+            # Vectors live in Qdrant with a dense AND a sparse vector per
+            # point, so retrieval has a keyword half instead of leaning on
+            # cosine similarity for exact tokens too. Everything else
+            # (KV, doc status, graph) stays on the local defaults.
+            vector_storage=qdrant_store.register(),
             llm_model_func=llm_model_func,
             role_llm_configs=role_llm_configs,
             rerank_model_func=rerank_model_func,
@@ -404,12 +504,17 @@ async def get_rag() -> LightRAG:
             # json_repair can recover a slightly-off JSON response.
             entity_extraction_use_json=True,
         )
-        await _rag.initialize_storages()
-    return _rag
+        await rag.initialize_storages()
+        _rags[workspace] = rag
+        await _evict_idle_rags()
+        return rag
 
 
 async def shutdown_rag() -> None:
-    global _rag
-    if _rag is not None:
-        await _rag.finalize_storages()
-        _rag = None
+    for rag in _rags.values():
+        await rag.finalize_storages()
+    _rags.clear()
+    # Embedded Qdrant holds an exclusive lock on its directory until closed,
+    # so a reload that skips this can't reopen the store.
+    qdrant_store.close_client()
+    spreadsheet.close_connections()

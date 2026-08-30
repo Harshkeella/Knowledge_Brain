@@ -1,0 +1,79 @@
+# Retrieval eval bank.
+#
+# The previous build's "Appendix B" question bank was never committed to this
+# repo, so this file seeds one in the same spirit and makes it runnable. It is
+# scored on RETRIEVAL, not on prose: each question lists substrings that must
+# appear somewhere in the evidence chain the pipeline assembled. That keeps the
+# score stable across model swaps and temperature -- a wording change must not
+# look like an accuracy regression.
+#
+# `expect` is matched case-insensitively against the evidence text (file paths,
+# entity names, relationship labels, chunk snippets).
+# `hops: 2` marks a question that should trip multi-hop decomposition.
+#
+# Add a row whenever a real question comes back wrong; that is what turns this
+# from a one-off check into a tracked number.
+
+questions:
+  # --- single-hop factual -------------------------------------------------
+  - id: Q1
+    question: What documents are in the knowledge base?
+    expect: []
+
+  - id: Q2
+    question: Summarise the most recently added document.
+    expect: []
+
+  # --- entity grounding ---------------------------------------------------
+  - id: Q3
+    question: Which people are mentioned across the sources?
+    expect: []
+
+  - id: Q4
+    question: Which organizations appear in the knowledge base?
+    expect: []
+
+  # --- structure / code ---------------------------------------------------
+  - id: Q5
+    question: What functions are defined in the ingested code?
+    expect: []
+
+  - id: Q6
+    question: Which files call the ingestion pipeline?
+    expect: []
+
+  # --- tabular ------------------------------------------------------------
+  - id: Q7
+    question: What columns are in the spreadsheet?
+    expect: []
+
+  # --- multi-hop (Q10-Q12 / Q21-Q23 / Q29 shapes) -------------------------
+  - id: Q10
+    question: Compare the topics covered by the two most recent documents.
+    hops: 2
+    expect: []
+
+  - id: Q11
+    question: Which columns feed the metric that the report mentions?
+    hops: 2
+    expect: []
+
+  - id: Q12
+    question: What is the difference between the entities in the first and second source?
+    hops: 2
+    expect: []
+
+  - id: Q21
+    question: How does the code relate to the documentation that describes it?
+    hops: 2
+    expect: []
+
+  - id: Q29
+    question: Which organization is connected to both the earliest and the latest document?
+    hops: 2
+    expect: []
+
+  # --- refusal: must NOT invent an answer ---------------------------------
+  - id: Q30
+    question: What is the capital of Mongolia?
+    expect_refusal: true

@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Crag — Knowledge Base Clipper",
-  "version": "1.0.0",
-  "description": "Clip pages or selected text into your Crag GraphRAG knowledge base, and chat with it from any tab.",
+  "name": "nodeRels — Knowledge Base Clipper",
+  "version": "1.1.0",
+  "description": "Clip articles into your nodeRels GraphRAG knowledge base — extracted in-browser, previewed before saving — and chat with it from any tab.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Crag",
+    "default_title": "nodeRels",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -19,6 +19,16 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1:8000/*", "http://localhost:8000/*"]
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*"
+  ]
 }

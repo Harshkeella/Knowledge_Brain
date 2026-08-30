@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-_TEMP_STORAGE = tempfile.mkdtemp(prefix="crag-bench-")
+_TEMP_STORAGE = tempfile.mkdtemp(prefix="noderels-bench-")
 os.environ["STORAGE_DIR"] = _TEMP_STORAGE
 
 from app.core.config import get_settings  # noqa: E402

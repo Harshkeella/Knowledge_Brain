@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Release notes 4.2 | Helio Docs</title>
+  <meta property="og:site_name" content="Helio Docs">
+</head>
+<body>
+  <div id="root">
+    <div class="app-shell">
+      <div class="app-shell__topbar"><div class="logo">Helio</div><div class="search"><input placeholder="Search"></div></div>
+      <div class="app-shell__body">
+        <div class="app-shell__sidebar"><div class="nav-group"><div class="nav-item">Getting started</div><div class="nav-item">Guides</div><div class="nav-item active">Release notes</div></div></div>
+        <div class="app-shell__content">
+          <div class="doc-view">
+            <div class="doc-view__title">Release notes 4.2</div>
+            <div class="doc-view__meta">Published 4 June 2025</div>
+            <div class="doc-view__prose">
+              <p>Version 4.2 focuses on the ingestion pipeline. The scheduler now backs off per-source rather than globally, so one slow upstream no longer stalls every other feed behind it in the queue.</p>
+              <p>Document parsing has been split from indexing. In practice this means a parse failure surfaces immediately with the offending document identified, instead of failing the whole batch several minutes later with a stack trace that names only the batch.</p>
+              <p>The retention job now runs incrementally. Previous versions rebuilt the entire retention index on every pass, which was fine at ten thousand documents and increasingly not fine after that.</p>
+              <p>Two behaviours changed in ways that may require action. Source identifiers are now normalised to lowercase on write, and the deprecated bulk endpoint has been removed after two releases of warnings.</p>
+              <p>Upgrading is a rolling restart. Workers written against the 4.1 task schema continue to run; the compatibility shim is scheduled for removal in 5.0.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="app-shell__footer"><span>© Helio</span><a href="/status">Status</a></div>
+    </div>
+  </div>
+</body>
+</html>

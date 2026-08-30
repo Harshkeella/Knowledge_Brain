@@ -12,6 +12,7 @@ import types
 import pytest
 
 from app.services import ingestion, manifest
+from app.services.test_source_graph import FakeRag
 from lightrag.base import DocStatus
 
 
@@ -25,6 +26,8 @@ class _FakeDocStatus:
 
     async def delete(self, ids):
         self.deleted.extend(ids)
+        for doc_id in ids:
+            self.rows.pop(doc_id, None)
 
 
 def _row(status, file_path, chunks=0):
@@ -45,20 +48,33 @@ def kb(tmp_path, monkeypatch):
     asyncio.run(manifest.init_db())
 
 
-def _fake_rag(rows, *, report_status_for=None):
-    """LightRAG's insert reports nothing for our doc_id unless told to."""
+def _fake_rag(rows, *, accepts_from_attempt=None):
+    """LightRAG's insert reports nothing for our doc_id while the name is
+    blocked. `accepts_from_attempt` is the 1-based attempt it starts to."""
+    state = {"attempt": 0, "doc_id": None}
 
     async def ainsert(input, ids, file_paths):
+        state["attempt"] += 1
+        state["doc_id"] = ids[0]
         return "track-1"
 
     async def aget_docs_by_track_id(track_id):
-        return {report_status_for: _row("processed", "x.pdf", 5)} if report_status_for else {}
+        if accepts_from_attempt and state["attempt"] >= accepts_from_attempt:
+            return {state["doc_id"]: _row(DocStatus.PROCESSED.value, "x.pdf", 5)}
+        return {}
+
+    # Ingestion also writes the Source supernode now, so the fake has to carry
+    # a graph and an entity index or the delete path has nothing to remove
+    # from. Reused rather than re-stubbed -- same fakes, one definition.
+    graph_stub = FakeRag()
 
     return types.SimpleNamespace(
         ainsert=ainsert,
         aget_docs_by_track_id=aget_docs_by_track_id,
         doc_status=_FakeDocStatus(rows),
         adelete_by_doc_id=lambda doc_id: asyncio.sleep(0),
+        chunk_entity_relation_graph=graph_stub.chunk_entity_relation_graph,
+        entities_vdb=graph_stub.entities_vdb,
     )
 
 
@@ -80,8 +96,24 @@ def test_reupload_of_an_indexed_file_returns_deduped_not_an_error(kb, monkeypatc
     assert asyncio.run(manifest.find_by_name("handbook.pdf")) is not None
 
 
-def test_rejected_with_nothing_indexed_reports_a_usable_error(kb, monkeypatch):
-    rag = _fake_rag({"dup-tombstone": _row(DocStatus.FAILED.value, "ghost.pdf")})
+def test_a_failed_run_does_not_block_its_own_filename_forever(kb, monkeypatch):
+    """A document that died mid-pipeline leaves a doc_status row holding its
+    name, and no manifest row to delete from the inventory. Re-uploading it
+    used to be a dead end; now the blocking row is cleared and it goes in."""
+    rag = _fake_rag(
+        {"doc-crashed": _row(DocStatus.FAILED.value, "report.xlsx")},
+        accepts_from_attempt=2,
+    )
+    monkeypatch.setattr(ingestion, "get_rag", lambda: _wrap(rag))
+
+    result = asyncio.run(ingestion.ingest_text("some text", "report.xlsx", "spreadsheet"))
+
+    assert result["deduped"] is False
+    assert rag.doc_status.deleted == ["doc-crashed"]
+
+
+def test_rejected_with_nothing_to_clear_reports_a_usable_error(kb, monkeypatch):
+    rag = _fake_rag({})
     monkeypatch.setattr(ingestion, "get_rag", lambda: _wrap(rag))
 
     with pytest.raises(ingestion.IngestionError, match="Delete it from the knowledge"):

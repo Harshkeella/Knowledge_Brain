@@ -3,8 +3,10 @@ co-occurrence edges built from it. No model is loaded -- `predict` is faked.
 """
 
 import json
+import re
 
 from app.services import gliner_extract as ge
+from app.services import graph_schema
 
 TEXT = (
     "Satya Nadella is the chief executive of Microsoft. "
@@ -13,19 +15,23 @@ TEXT = (
 
 
 def _fake_predict(windows: list[str]) -> list[list[dict]]:
-    """Locate a few known names by string search, GLiNER's output shape."""
+    """Locate every mention of a few known names, GLiNER's output shape.
+
+    Case-insensitive and all occurrences, like the real model: that is what
+    puts the same pair in several sentences and the same name in several
+    casings, which is exactly what the graph must not duplicate.
+    """
     wanted = {"Satya Nadella": "person", "Microsoft": "organization", "Seattle": "location"}
     out = []
     for window in windows:
         found = []
         for name, label in wanted.items():
-            start = window.find(name)
-            if start >= 0:
+            for match in re.finditer(re.escape(name), window, re.IGNORECASE):
                 found.append(
                     {
-                        "start": start,
-                        "end": start + len(name),
-                        "text": name,
+                        "start": match.start(),
+                        "end": match.end(),
+                        "text": match.group(),
                         "label": label,
                         "score": 0.9,
                     }
@@ -38,30 +44,41 @@ def test_entities_carry_type_and_grounded_description():
     records = ge.extract_records(TEXT, _fake_predict)
     by_name = {e["name"]: e for e in records["entities"]}
 
-    assert set(by_name) == {"Satya Nadella", "Microsoft", "Seattle"}
-    assert by_name["Microsoft"]["type"] == "organization"
+    # Canonical names: one node per thing, whatever the casing in the prose.
+    assert set(by_name) == {"SATYA NADELLA", "MICROSOFT", "SEATTLE"}
+    assert by_name["MICROSOFT"]["type"] == "organization"
     # LightRAG drops any entity with an empty description.
-    assert by_name["Seattle"]["description"].startswith("The company later opened")
+    assert by_name["SEATTLE"]["description"].startswith("The company later opened")
 
 
 def test_edges_only_join_entities_from_the_same_sentence():
     records = ge.extract_records(TEXT, _fake_predict)
     pairs = {frozenset((r["source"], r["target"])) for r in records["relationships"]}
 
-    assert frozenset(("Satya Nadella", "Microsoft")) in pairs
+    assert frozenset(("SATYA NADELLA", "MICROSOFT")) in pairs
     # Seattle is in the second sentence -- no edge to the first sentence's names.
-    assert frozenset(("Satya Nadella", "Seattle")) not in pairs
-    assert frozenset(("Microsoft", "Seattle")) not in pairs
+    assert frozenset(("SATYA NADELLA", "SEATTLE")) not in pairs
+    assert frozenset(("MICROSOFT", "SEATTLE")) not in pairs
 
 
-def test_keywords_come_from_the_words_between_the_mentions():
-    records = ge.extract_records(TEXT, _fake_predict)
-    edge = next(
-        r
-        for r in records["relationships"]
-        if {r["source"], r["target"]} == {"Satya Nadella", "Microsoft"}
+def test_case_variants_of_one_name_are_a_single_entity():
+    text = "Microsoft shipped it. microsoft grew. The Microsoft's revenue rose."
+    records = ge.extract_records(text, _fake_predict)
+
+    assert [e["name"] for e in records["entities"]] == ["MICROSOFT"]
+
+
+def test_edges_are_typed_and_never_repeat_a_pair():
+    text = (
+        "Satya Nadella runs Microsoft. Satya Nadella founded Microsoft again. "
+        "Satya Nadella and Microsoft agreed."
     )
-    assert edge["keywords"] == "is the chief executive of"
+    records = ge.extract_records(text, _fake_predict)
+
+    # Three sentences, one pair, one edge -- carrying the closed vocabulary's
+    # type rather than three different snippets of connecting prose.
+    assert len(records["relationships"]) == 1
+    assert records["relationships"][0]["keywords"] == graph_schema.RELATED_TO
 
 
 def test_long_text_is_split_into_multiple_windows():
@@ -104,3 +121,16 @@ def test_summary_prompt_returns_merged_prose_not_extraction_json():
     # Duplicates collapse, and the result is prose -- feeding an entity
     # description `{"entities": []}` is what the summary branch exists to stop.
     assert result == "Microsoft ships Copilot. It is based in Redmond."
+
+
+def test_spreadsheet_summaries_are_skipped_entirely():
+    """Their structure is written into the graph deterministically; extracting
+    it again from prose is what put `VARCHAR` and `BIGINT` in the graph."""
+    import asyncio
+
+    from app.services.parsers.spreadsheet import SUMMARY_HEADER
+
+    body = f"{SUMMARY_HEADER} sales.xlsx\nWorksheet 'Q1': 4 rows, 3 columns."
+    prompt = f"---Input Text---\n```\n{body}\n```\n\n---Output---\n"
+
+    assert asyncio.run(ge.gliner_extract(prompt)) == ge.EMPTY_RESULT
